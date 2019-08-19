@@ -1,4 +1,4 @@
-FROM arm32v7/golang:1.8
+FROM golang:1.12
 ENV authbot_cmd iam
 ENV authbot_prefix !
 ENV authbot_role Members
