@@ -9,9 +9,10 @@ import (
 	"syscall"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/vharitonsky/iniflags"
 )
 
-var (
+type Config struct {
 	// Token Discord API Bot Token
 	Token string
 	// Prefix for commands
@@ -20,24 +21,40 @@ var (
 	DefaultRole string
 	// BotCommand Name of the command to use for authenticaton function
 	BotCommand string
-)
+	// WelcomeEnabled disable or enable new member welcome message
+	WelcomeEnabled bool
+	// WelcomeMessage Message to announce when a new user joins the server
+	WelcomeMessage string
+	// WelcomeChannel Channel ID of channel to send welcome messages to
+	WelcomeChannel string
+}
+
+var config = Config{}
 
 func init() {
-	flag.StringVar(&Token, "token", "", "Bot Token")
-	flag.StringVar(&Prefix, "prefix", "!", "Command prefix")
-	flag.StringVar(&DefaultRole, "role", "Members", "Name of the role to place authenticated members in")
-	flag.StringVar(&BotCommand, "cmd", "iam", "Bot command name")
-	flag.Parse()
+	flag.StringVar(&config.Token, "token", "", "Bot Token")
+	flag.StringVar(&config.Prefix, "prefix", "!", "Command prefix")
+	flag.StringVar(&config.DefaultRole, "role", "Members", "Name of the role to place authenticated members in")
+	flag.StringVar(&config.BotCommand, "cmd", "iam", "Bot command name")
+	flag.BoolVar(&config.WelcomeEnabled, "welcome", false, "Enable new member welcome message")
+	flag.StringVar(&config.WelcomeMessage, "welcomemsg", "Welcome {name}! Please set your in-game character with !iam server firstname lastname", "Message to send when a new user joins")
+	flag.StringVar(&config.WelcomeChannel, "welcomechannel", "", "Channel ID of channel to send welcome messages to (Required if welcome is enabled)")
+	iniflags.Parse()
 }
 
 func main() {
 	// Create new discord session using token provided on command line via -token
-	if Token == "" {
+	if config.Token == "" {
 		fmt.Println("Missing bot token. Please specify via -token")
 		os.Exit(1)
 	}
-	dg, err := discordgo.New("Bot " + Token)
+	// Check that a channel and welcome message are set if welcome is enabled
+	if config.WelcomeEnabled && config.WelcomeChannel == "" && config.WelcomeMessage == "" {
+		fmt.Println("New user welcome is enabled, but welcome channel or welcome message is not set. Please check configuration!")
+		os.Exit(1)
+	}
 
+	dg, err := discordgo.New("Bot " + config.Token)
 	// Exit if we fail to connect for whatever reason
 	if err != nil {
 		fmt.Println("Error creating discord session: ", err)
@@ -88,6 +105,10 @@ func embedFailure(content string) *discordgo.MessageEmbed {
 	return embed
 }
 
+func guildMemberAdd(s *discordgo.Session, g *discordgo.GuildMemberAdd) {
+
+}
+
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// ignore messages we send
 	if m.Author.ID == s.State.User.ID {
@@ -97,13 +118,13 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// if a message length is greater than 1 character and the prefix matches our set prefix,
 	// split the command from the prefix and store the rest as arguments to be passed on to
 	// the appropiate handler function
-	if len(m.Content) > 1 && strings.HasPrefix(m.Content, Prefix) {
+	if len(m.Content) > 1 && strings.HasPrefix(m.Content, config.Prefix) {
 		messageArray := strings.Split(m.Content, " ")
-		command := strings.ToLower(strings.TrimPrefix(messageArray[0], Prefix))
+		command := strings.ToLower(strings.TrimPrefix(messageArray[0], config.Prefix))
 		args := messageArray[1:]
 
 		switch command {
-		case BotCommand:
+		case config.BotCommand:
 			authHandler(s, m, args)
 		}
 	}
@@ -136,10 +157,10 @@ func authHandler(s *discordgo.Session, m *discordgo.MessageCreate, args []string
 		return
 	}
 
-	role := getGuildRoleByName(DefaultRole, dguild)
+	role := getGuildRoleByName(config.DefaultRole, dguild)
 	err = s.GuildMemberRoleAdd(m.GuildID, m.Author.ID, role)
 	if err != nil {
-		msg := "Failed to add role " + DefaultRole + " to " + m.Author.Username
+		msg := "Failed to add role " + config.DefaultRole + " to " + m.Author.Username
 		fmt.Println(msg)
 		fmt.Println(err)
 		s.ChannelMessageSendEmbed(m.ChannelID, embedFailure(msg))
